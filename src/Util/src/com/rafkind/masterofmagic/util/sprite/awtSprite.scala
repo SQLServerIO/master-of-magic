@@ -1,46 +1,44 @@
-package com.rafkind.masterofmagic.util
+/*
+ * To change this template, choose Tools | Templates
+ * and open the template in the editor.
+ */
 
-import org.newdawn.slick._;
+package com.rafkind.masterofmagic.util.sprite
+
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.RemovalListener;
+import com.google.common.cache.RemovalNotification;
+import com.google.inject._;
 import com.rafkind.masterofmagic.state._;
+import com.rafkind.masterofmagic.system.Data
+import com.rafkind.masterofmagic.util._;
+import java.awt._;
+import java.awt.image._;
 
 // http://www.roughseas.ca/momime/phpBB3/viewtopic.php?f=1&t=5
 
-object SpriteReaderHelper {
+object AwtSpriteReaderHelper {
   def create(width:Int, height:Int) =
-    new ImageBuffer(width, height);
+    GraphicsEnvironment
+      .getLocalGraphicsEnvironment()
+      .getDefaultScreenDevice()
+      .getDefaultConfiguration()
+      .createCompatibleImage(width, height);
 
-  def reset(image:ImageBuffer) = {
+  def reset(image:BufferedImage) = {
     for (y <- 0 until image.getHeight()) {
       for (x <- 0 until image.getWidth()) {
-        image.setRGBA(x, y, 0, 0, 0, 0);
+        image.setRGB(x, y, 0);
       }
     }
   }
 
-  def copy(source:ImageBuffer) = {
-    import java.nio.ByteOrder;
-    
-    val sourceRgba = source.getRGBA();
-    var dest = new ImageBuffer(source.getWidth(), source.getHeight());
-
-    if (ByteOrder.nativeOrder() == ByteOrder.BIG_ENDIAN) {
-      for (y <- 0 until source.getHeight()) {
-        for (x <- 0 until source.getWidth()) {
-          val offset = (x + (y * source.getTexWidth())) * 4;
-          dest.setRGBA(x, y, sourceRgba(offset+2), sourceRgba(offset+1), sourceRgba(offset), sourceRgba(offset+3));
-        }
-      }
-    } else {
-      for (y <- 0 until source.getHeight()) {
-        for (x <- 0 until source.getWidth()) {
-          val offset = (x + (y * source.getTexWidth())) * 4;
-          dest.setRGBA(x, y, sourceRgba(offset), sourceRgba(offset+1), sourceRgba(offset+2), sourceRgba(offset+3));
-        }
-      }
-    }
-
-    dest;
-  }
+  def copy(source:BufferedImage) = 
+    new BufferedImage(source.getColorModel(), 
+                      source.copyData(null), 
+                      source.isAlphaPremultiplied(), null);
+  
 
   /*var shouldLog = false;
   def turnLoggingOn:Unit = {
@@ -57,21 +55,21 @@ object SpriteReaderHelper {
     }
   }*/
   
-  def withPixelDo(image:ImageBuffer, x:Int, y:Int, color:Color):Unit = {
+  def withPixelDo(image:BufferedImage, x:Int, y:Int, color:Color):Unit = {
     /*if (shouldLog) {
       //println("[" + x + ", " + y + "] = " + (color.getRed(), color.getGreen(), color.getBlue()));
       println("[" + x + ", " + y + "] = " + "%02X".format(color.getRed()) + "%02X".format(color.getGreen()) + "%02X".format(color.getBlue()) + ".." + colorMap(color));
       //println("[" + x + ", " + y + "] = " + color);
     }*/
-    image.setRGBA(x, y, color.getRed(), color.getGreen(), color.getBlue(), color.getAlpha());
+   image.setRGB(x, y, color.getRGB());
   }
   
 
-  def finish(image:ImageBuffer) =
-    image.getImage(Image.FILTER_NEAREST);
+  def finish(image:BufferedImage) =
+    image;
 }
 
-object SpriteReader {
+object AwtSpriteReader {
 
   case class Header(width:Int,
                     height:Int,
@@ -130,7 +128,8 @@ object SpriteReader {
     if (header.paletteInfoOffset > 0) {
       var pal = new Array[Color](Colors.colors.length);
       for (i <- 0 until pal.length) {
-        pal(i) = Colors.colors(i);
+        val c = Colors.colors(i);
+        pal(i) = new Color(c.getRed(), c.getGreen(), c.getBlue());
       }
 
       lbxReader.seek(lbxReader.metaData.subfileStart(index) + paletteInfo.paletteOffset);
@@ -142,7 +141,12 @@ object SpriteReader {
       }
       pal;
     } else {
-      Colors.colors
+      var pal = new Array[Color](Colors.colors.length);
+      for (i <- 0 until pal.length) {
+        val c = Colors.colors(i);
+        pal(i) = new Color(c.getRed(), c.getGreen(), c.getBlue());
+      }
+      pal;
     }
   }
 
@@ -160,12 +164,12 @@ object SpriteReader {
                 header:Header,
                 paletteInfo:PaletteInfo,
                 palette:Array[Color],
-                target:ImageBuffer,
+                target:BufferedImage,
                 colorFilter:(Int)=>Int):Unit = {
 
     var index = 0;
     if (data(index) == 1 && bitmapNumber > 0) {
-      SpriteReaderHelper.reset(target);
+      AwtSpriteReaderHelper.reset(target);
     }
     index = 1;
 
@@ -201,7 +205,7 @@ object SpriteReader {
               var rle_counter = 0;
               while ((rle_counter < rle_length) && (y < header.height)) {
                 if ((x < header.width) && (y < header.height) && (x >= 0) && (y >= 0)) {
-                  SpriteReaderHelper.withPixelDo(target, x, y, palette(colorFilter(data(last_pos))));
+                  AwtSpriteReaderHelper.withPixelDo(target, x, y, palette(colorFilter(data(last_pos))));
                 } else {
                   throw new Exception("Overrun");
 
@@ -212,7 +216,7 @@ object SpriteReader {
               n_r += 2;
             } else {
               if ((x < header.width) && (y < header.height) && (x >= 0) && (y >= 0)) {
-                SpriteReaderHelper.withPixelDo(target, x, y, palette(colorFilter(data(n_r))));
+                AwtSpriteReaderHelper.withPixelDo(target, x, y, palette(colorFilter(data(n_r))));
               }
               n_r += 1;
               y += 1;
@@ -257,8 +261,8 @@ object SpriteReader {
     val paletteInfo = readPaletteInfo(lbxReader, groupIndex, header.paletteInfoOffset)
     val palette = readPalette(lbxReader, groupIndex, header, paletteInfo)
 
-    var canvas = SpriteReaderHelper.create(header.width, header.height);
-    SpriteReaderHelper.reset(canvas);
+    var canvas = AwtSpriteReaderHelper.create(header.width, header.height);
+    AwtSpriteReaderHelper.reset(canvas);
     def readSprite(bitmapNumber:Int, offset:Offset) = {
       lbxReader.seek(lbxMetaData.subfileStart(groupIndex) + offset.start);
       var data = new Array[Byte](offset.end - offset.start);
@@ -271,15 +275,49 @@ object SpriteReader {
 
       
       render(bitmapNumber, data2, header, paletteInfo, palette, canvas, buildColorFilter(flag));
-      SpriteReaderHelper.copy(canvas);
+      AwtSpriteReaderHelper.copy(canvas);
     }
 
     val answer = new Array[Image](offsets.size);
     for (index <- 0 until offsets.size) {
-      answer(index) = SpriteReaderHelper.finish(
+      answer(index) = AwtSpriteReaderHelper.finish(
         readSprite(index, offsets(index)));
     }
 
     answer;
+  }
+}
+
+case class SpriteGroupKey(originalGameAsset:OriginalGameAsset, group:Int, flag:Option[FlagColor]);
+
+class AwtImageLibrarian {
+  
+  val spriteGroupCache = CacheBuilder
+    .newBuilder()
+    .maximumSize(256)    
+    /* .removalListener(new RemovalListener[SpriteGroupKey, Array[Image]]() {
+      def onRemoval(removal:RemovalNotification[SpriteGroupKey, Array[Image]]):Unit = {
+        *val images = removal.getValue();
+        for (image <- images) 
+          image.destroy();      *
+      }
+    })*/
+    .build(new CacheLoader[SpriteGroupKey, Array[Image]](){
+      def load(key:SpriteGroupKey):Array[Image] = {
+        val reader = new LbxReader(Data.originalDataPath(key.originalGameAsset.fileName));
+        val sprites = AwtSpriteReader.read(reader, key.group, key.flag);
+        reader.close();
+        return sprites;
+      }
+    });
+
+  def getRawSprite(originalGameAsset:OriginalGameAsset, group:Int, index:Int) = {
+    val images = spriteGroupCache.get(new SpriteGroupKey(originalGameAsset, group, None));
+    images(index);
+  }
+
+  def getFlaggedSprite(originalGameAsset:OriginalGameAsset, group:Int, index:Int, flag:FlagColor) = {
+    val images = spriteGroupCache.get(new SpriteGroupKey(originalGameAsset, group, Some(flag)));
+    images(index);
   }
 }

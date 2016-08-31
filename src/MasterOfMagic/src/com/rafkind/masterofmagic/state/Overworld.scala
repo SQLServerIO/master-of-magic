@@ -5,6 +5,8 @@
 
 package com.rafkind.masterofmagic.state
 
+import com.rafkind.masterofmagic.util._;
+
 object Overworld {
   val WIDTH = 60;
   val HEIGHT = 40;
@@ -43,7 +45,7 @@ object Overworld {
    * TUNDRA = 1605
    */
 
-  def create():Overworld = {
+  def create(players:Array[Player]):Overworld = {
 
     val arcanus = Map(TerrainType.OCEAN -> 0,
       TerrainType.GRASSLAND -> 1,
@@ -76,9 +78,11 @@ object Overworld {
 
     overworld.fillPlane(Plane.ARCANUS, arcanus(TerrainType.OCEAN), TerrainType.OCEAN);
     overworld.fillPlane(Plane.MYRROR, myrror(TerrainType.OCEAN), TerrainType.OCEAN);
+    
+    val neutralPlayer = players.find (x => x.flag == FlagColor.BROWN).get;
 
-    overworld.buildPlane(Plane.ARCANUS, 5, 800);
-    overworld.buildPlane(Plane.MYRROR, 5, 800);
+    overworld.buildPlane(Plane.ARCANUS, 5, 800, neutralPlayer);
+    overworld.buildPlane(Plane.MYRROR, 5, 800, neutralPlayer);
 
     for ((plane, mapping) <- List((Plane.ARCANUS, arcanus), (Plane.MYRROR, myrror))) {
       for (y <- 0 until HEIGHT) {
@@ -120,6 +124,10 @@ class Overworld(val width:Int, val height:Int) {
 
   var terrain:Array[TerrainSquare] =
     new Array[TerrainSquare](2 * width * height);
+
+  var nodes = Array(List[Node](), List[Node]());
+  var lairs = Array(List[Lair](), List[Lair]());
+  var towers = Array(List[Lair](), List[Lair]());
 
   def get(plane:Plane, x:Int, y:Int):TerrainSquare = {
     val xx = x % width;
@@ -170,12 +178,40 @@ class Overworld(val width:Int, val height:Int) {
     return (x,y);
   }
 
+  def scatter(random:Random,
+              plane:Plane,
+              count:Int,
+              groundCheck:(Plane,Int,Int) => Boolean,
+              placement:(Plane,Int,Int) => Unit):Unit = {
+    for (n <- 0 until count) {
+      findWhereTrue(random,
+                    plane,
+                    (x,y) => groundCheck(plane, x, y)) match {
+        case (x,y) => placement(plane, x, y);
+      }
+    }
+  }
+
   def grow(random:Random,
            plane:Plane,
            numSeeds:Int,
            groundCount:Int,
            base:TerrainType,
-           topping:TerrainType):Unit = {
+           topping:TerrainType):Unit = 
+             grow(random,
+                  plane,
+                  numSeeds,
+                  groundCount,
+                  base,
+                  topping, (x,y) => ());
+
+  def grow(random:Random,
+           plane:Plane,
+           numSeeds:Int,
+           groundCount:Int,
+           base:TerrainType,
+           topping:TerrainType,
+           callback:(Int,Int) => Unit):Unit = {
     for(n <- 0 until numSeeds) {
       findWhereTrue(random,
                      plane,
@@ -185,6 +221,7 @@ class Overworld(val width:Int, val height:Int) {
         case (x,y) => {
           var t = get(plane, x, y);
           t.terrainType = topping;
+          callback(x, y);
         }
       }
     }
@@ -274,7 +311,7 @@ class Overworld(val width:Int, val height:Int) {
     }
   }
 
-  def buildPlane(plane:Plane, numSeeds:Int, groundCount:Int):Unit = {
+  def buildPlane(plane:Plane, numSeeds:Int, groundCount:Int, neutralPlayer:Player):Unit = {
     var random = new Random();
 
     println("Land");
@@ -296,10 +333,18 @@ class Overworld(val width:Int, val height:Int) {
     }
 
     println("Nodes");
-    grow(random, plane, numSeeds, 0, TerrainType.GRASSLAND, TerrainType.SORCERY_NODE);
-    grow(random, plane, numSeeds, 0, TerrainType.MOUNTAIN, TerrainType.CHAOS_NODE);
-    grow(random, plane, numSeeds, 0, TerrainType.FOREST, TerrainType.NATURE_NODE);
+    val createNode = (random:Random, plane:Plane, x:Int, y:Int, n:TerrainType) => {
+      val node = Node.createNode(random, neutralPlayer, x, y, n, 1);
+      nodes(plane.id) ::= node;
+      get(plane, x, y).place = Option(node);
+    };
 
+    grow(random, plane, numSeeds, 0, TerrainType.GRASSLAND, TerrainType.SORCERY_NODE,
+      (x, y) => createNode(random, plane, x, y, TerrainType.SORCERY_NODE));
+    grow(random, plane, numSeeds, 0, TerrainType.MOUNTAIN, TerrainType.CHAOS_NODE,
+      (x, y) => createNode(random, plane, x, y, TerrainType.CHAOS_NODE));
+    grow(random, plane, numSeeds, 0, TerrainType.FOREST, TerrainType.NATURE_NODE,
+      (x, y) => createNode(random, plane, x, y, TerrainType.NATURE_NODE));
 
     println("Tundra");
     // north and south poles, and tundra
@@ -320,5 +365,167 @@ class Overworld(val width:Int, val height:Int) {
         }
       }
     }
+
+    println("Lairs");
+    scatter(random, plane, numSeeds,
+      (plane, x, y) => {
+        val t = get(plane, x, y);
+        (y > 1
+          && y < height-1
+          && t.terrainType != TerrainType.OCEAN
+          && t.terrainType != TerrainType.SHORE
+          && t.place == None);
+      },
+      (plane, x, y) => {
+        val lair = Lair.createLair(
+              random,
+              neutralPlayer,
+              x,
+              y, 
+              LairType.getRandom(random),
+              1);
+        lairs(plane.id) ::= lair;
+        get(plane, x, y).place = Some(lair);
+      });
+
+    println("Towers");
+    scatter(random, plane, numSeeds,
+      (plane, x, y) => {
+        val t = get(plane, x, y);
+        (y > 1
+          && y < height-1
+          && t.terrainType != TerrainType.OCEAN
+          && t.terrainType != TerrainType.SHORE
+          && t.place == None);
+      },
+      (plane, x, y) => {
+        val lair = Lair.createLair(
+              random,
+              neutralPlayer,
+              x,
+              y,
+              LairType.TOWER,
+              1);
+        lairs(plane.id) ::= lair;
+        get(plane, x, y).place = Some(lair);
+      });
+
+    println("Neutral Cities");
+    scatter(random, plane, numSeeds,
+      (plane, x, y) => {
+        val t = get(plane, x, y);
+        (y > 1
+          && y < height-1
+          && (t.terrainType == TerrainType.RIVER
+          || t.terrainType == TerrainType.SWAMP
+          || t.terrainType == TerrainType.TUNDRA
+          || t.terrainType == TerrainType.MOUNTAIN
+          || t.terrainType == TerrainType.HILLS
+          || t.terrainType == TerrainType.GRASSLAND
+          || t.terrainType == TerrainType.DESERT
+          || t.terrainType == TerrainType.FOREST)
+          && t.place == None);
+      },
+      (plane, x, y) => {
+        val city = City.createNeutralCity(neutralPlayer, 
+                                          x,
+                                          y,
+                                          "My City",
+                                          Race.HIGH_MEN);
+        neutralPlayer.cities ::= city;
+
+        println("Create city at %d, %d".format(x, y))
+
+        get(plane, x, y).place = Some(city);
+      });
+    
+    /*get(plane, 0, 0).armyUnitStack = 
+      Some(new ArmyUnitStack(
+        0, 0, 
+        neutralPlayer, 
+        List(
+          new ArmyUnit(new SpriteKey(OriginalGameAsset.UNITS2, 16, 0)))));*/
+  }
+
+  def isValidCityLocation(plane:Plane, x:Int, y:Int):Boolean = {
+    val terrainSquare = get(plane, x, y);
+    if (!terrainSquare.terrainType.canBuildCityOn) {
+      return false;
+    }
+
+    for (j <- -2 to 2) {
+      for (i <- -2 to 2) {
+        val cx = (x + i + width) % width;
+        val cy = y + j;
+        if (cy >= 0 && cy < height) {
+          (get(plane, cx, cy).place) match {
+            case Some(city:City) => {
+                return false;
+            }
+            case _ =>
+          }
+        }
+      }
+    }
+
+    return true;
+  }
+
+  def getMaxCityPop(plane:Plane, x:Int, y:Int):Int = {
+    var answer = 1;
+    
+    for (j <- -2 to 2) {
+      for (i <- -2 to 2) {
+        val cx = (x + i + width) % width;
+        val cy = y + j;
+        if (cy >= 0 && cy < height) {
+          (get(plane, cx, cy).terrainType) match {
+            case TerrainType.SHORE => answer += 1;
+            case TerrainType.RIVER => answer += 3;
+            case TerrainType.SWAMP => answer += 1;
+            case TerrainType.HILLS => answer += 1;
+            case TerrainType.GRASSLAND => answer += 2;
+            case TerrainType.FOREST => answer += 1;
+            case _ =>
+          }
+        }
+      }
+    }
+
+    answer;
+  }
+
+  def findGoodCityLocation(random:Random, plane:Plane):Tuple2[Int, Int] = {
+    var bestx:Int = 0;
+    var besty:Int = 0;
+    var bestpop:Int = 0;
+
+    for (i <- 0 to 5) {
+      findWhereTrue(random, plane, (x,y) => isValidCityLocation(plane, x, y)) match {
+        case (x,y) =>
+          val pop = getMaxCityPop(plane, x, y);
+          if (pop > bestpop) {
+            bestx = x;
+            besty = y;
+            bestpop = pop;
+          }
+      }
+    }
+
+    (bestx,besty);
+  }
+
+  def createCityAt(
+    plane:Plane,
+    x:Int,
+    y:Int,
+    player:Player,
+    race:Race,
+    startingPopulation:Int):City = {
+
+    val city = new City(x, y, player, "New City", race);
+
+    get(plane, x, y).place = Some(city);
+    city;    
   }
 }

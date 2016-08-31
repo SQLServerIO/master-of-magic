@@ -5,23 +5,23 @@
 
 package com.rafkind.masterofmagic.state
 
-case class TerrainType(val id:Int, val name:String)
+case class TerrainType(val id:Int, val name:String, val canBuildCityOn:Boolean, val isLand:Boolean)
 object TerrainType {
-  val OCEAN = TerrainType(0, "Ocean");
-  val SHORE = TerrainType(1, "Shore");
-  val RIVER = TerrainType(2, "River");
-  val SWAMP = TerrainType(3, "Swamp");
-  val TUNDRA = TerrainType(4, "Tundra");
-  val DEEP_TUNDRA = TerrainType(5, "Deep Tundra");
-  val MOUNTAIN = TerrainType(6, "Mountain");
-  val VOLCANO = TerrainType(7, "Volcano");
-  val CHAOS_NODE = TerrainType(8, "Chaos Node");
-  val HILLS = TerrainType(9, "Hills");
-  val GRASSLAND = TerrainType(10, "Grassland");
-  val SORCERY_NODE = TerrainType(11, "Sorcery Node");
-  val DESERT = TerrainType(12, "Desert");
-  val FOREST = TerrainType(13, "Forest");
-  val NATURE_NODE = TerrainType(14, "Nature Node");
+  val OCEAN = TerrainType(0, "Ocean", false, false);
+  val SHORE = TerrainType(1, "Shore", false, false);
+  val RIVER = TerrainType(2, "River", true, true);
+  val SWAMP = TerrainType(3, "Swamp", true, true);
+  val TUNDRA = TerrainType(4, "Tundra", true, true);
+  val DEEP_TUNDRA = TerrainType(5, "Deep Tundra", true, true);
+  val MOUNTAIN = TerrainType(6, "Mountain", true, true);
+  val VOLCANO = TerrainType(7, "Volcano", true, true);
+  val CHAOS_NODE = TerrainType(8, "Chaos Node", false, true);
+  val HILLS = TerrainType(9, "Hills", true, true);
+  val GRASSLAND = TerrainType(10, "Grassland", true, true);
+  val SORCERY_NODE = TerrainType(11, "Sorcery Node", false, true);
+  val DESERT = TerrainType(12, "Desert", true, true);
+  val FOREST = TerrainType(13, "Forest", true, true);
+  val NATURE_NODE = TerrainType(14, "Nature Node", false, true);
 
   val values = Array(
     OCEAN,
@@ -229,8 +229,8 @@ class TerrainSquare(
   var fogOfWarBitset:Int,
   var pollutionFlag:Boolean,
   var roadBitset:Int,
-  var building:Option[Place],
-  var unitStack:Option[UnitStack]) {
+  var place:Option[Place],
+  var armyUnitStack:Option[ArmyUnitStack]) {
 
   // what type of terrain
   // what terrain tile to use
